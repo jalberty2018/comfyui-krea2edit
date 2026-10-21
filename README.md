@@ -40,7 +40,7 @@ Keep the same CLIP, image, optional image_b, grounding_px and system_prompt inpu
 Connect its first output to the sampler's conditioning input.
 
 Use **Krea2 Edit (source patch)** from this updated package in the MODEL path.
-The weighted encoder's hooks are consumed by that source patch; a native Krea2
+The weighted encoder's metadata is consumed by that source patch; a native Krea2
 MODEL without this patch will not apply the phrase weights. No Enhancer install
 is required. Existing source-patch and grounded-encoder node IDs remain unchanged.
 
@@ -65,8 +65,16 @@ source-image queries and the existing ref_boost/ref_boost_a biases are preserved
 Positive and negative conditioning can carry separate weights.
 
 The optional phrase_report output lists the clean prompt, final token rows and
-whether a hook was attached. It does not confirm sampler execution.
-Weights of 1 do not attach a hook. Unannotated prompts use the original encoder path.
+whether phrase metadata was attached. It does not confirm sampler execution.
+Weights of 1 do not attach phrase metadata. Unannotated prompts use the original encoder path.
+Weights travel through native model conditioning, so this feature does not force
+ComfyUI to disable dynamic VRAM loading. Different positive/negative weights
+remain separate during conditioning batching.
+
+If an earlier version failed with `BFloat16 and Float` at `m.first`, update this
+package and fully restart ComfyUI to clear cached hooks and model-loading state.
+The change avoids the hook-triggered loading fallback; it does not cast the
+entire model or modify model weights.
 
 **Experimental:** model-free mapping and mask tests pass; GPU image editing,
 CFG batching, control/attention patches and quantized setups need validation.

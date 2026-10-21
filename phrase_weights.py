@@ -68,8 +68,19 @@ def finish_mapping(layout, count):
     return tuple(biases), report
 
 
+def attach_phrase_condition(metadata, count, biases):
+    """Carry per-branch data without triggering ComfyUI's hooks/dynamic fallback."""
+    if not biases:
+        return metadata
+    from comfy.conds import CONDConstant
+    updated = metadata.copy()
+    model_conds = dict(updated.get("model_conds", {}))
+    model_conds[OPTION_KEY] = CONDConstant({"count": count, "biases": tuple(biases)})
+    updated["model_conds"] = model_conds
+    return updated
+
+
 def encode_phrases(clip, clean, spans, tokens, template):
-    import comfy.hooks
     from comfy.text_encoders import krea2
     from transformers import Qwen2TokenizerFast
 
@@ -82,16 +93,7 @@ def encode_phrases(clip, clean, spans, tokens, template):
         if tensor.ndim != 3 or tensor.shape[-1] != 12 * 2560:
             raise ValueError("Expected Krea2's native twelve-layer text conditioning.")
         biases, phrases = finish_mapping(layout, tensor.shape[1])
-        item = [[tensor, metadata]]
-        if biases:
-            hook = comfy.hooks.TransformerOptionsHook(
-                {OPTION_KEY: {"count": tensor.shape[1], "biases": biases}},
-                hook_scope=comfy.hooks.EnumHookScope.HookedOnly)
-            hook.hook_id = OPTION_KEY
-            group = comfy.hooks.HookGroup()
-            group.add(hook)
-            item = comfy.hooks.set_hooks_for_conditioning(item, group)
-        output.extend(item)
+        output.append([tensor, attach_phrase_condition(metadata, tensor.shape[1], biases)])
         reports.append({"active": bool(biases), "token_count": tensor.shape[1], "phrases": phrases})
     return output, reports
 

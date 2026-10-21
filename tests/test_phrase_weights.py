@@ -2,6 +2,10 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import ast
+import sys
+import types
+from unittest.mock import patch
 import numpy as np
 
 ROOT = Path(__file__).parents[1]
@@ -78,6 +82,49 @@ class PhraseTests(unittest.TestCase):
     def test_changed_rows_rejected(self):
         with self.assertRaises(ValueError):
             p.apply_phrase_bias(None, {"count": 4, "biases": [(1, 1)]}, 3, 2, 2, None)
+
+    def test_metadata_transport_adds_no_hooks_and_does_not_mutate(self):
+        class Constant:
+            def __init__(self, value):
+                self.cond = value
+        conds = types.ModuleType("comfy.conds")
+        conds.CONDConstant = Constant
+        existing = object()
+        original = {"model_conds": {"other": existing}}
+        with patch.dict(sys.modules, {"comfy.conds": conds}):
+            positive = p.attach_phrase_condition(original, 3, [(1, 2)])
+            negative = p.attach_phrase_condition(original, 3, [(2, -1)])
+        self.assertNotIn("hooks", positive)
+        self.assertNotIn(p.OPTION_KEY, original["model_conds"])
+        self.assertIs(positive["model_conds"]["other"], existing)
+        self.assertNotEqual(positive["model_conds"][p.OPTION_KEY].cond,
+                            negative["model_conds"][p.OPTION_KEY].cond)
+        self.assertIs(p.attach_phrase_condition(original, 3, ()), original)
+
+    def test_source_wrapper_receives_payload_without_leaking_to_next_call(self):
+        # Exercise the actual nested wrapper without loading ComfyUI or model weights.
+        tree = ast.parse((ROOT / "__init__.py").read_text(encoding="utf-8"))
+        node = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+                    and n.name == "Krea2EditModelPatch")
+        method = next(n for n in node.body if isinstance(n, ast.FunctionDef) and n.name == "patch")
+        wrapper = next(n for n in method.body if isinstance(n, ast.FunctionDef) and n.name == "wrapper")
+        captured = []
+        env = {"src_samples": "source", "vae": None, "source_image": None,
+               "fit_mode": "fit", "ref_boost": 3, "ref_boost_a": 1,
+               "ref_boost_mask": None, "ref_position": "aligned (trained)",
+               "ref_position_a": "aligned (trained)",
+               "krea2_edit_forward": lambda *args, **kwargs: captured.append(args[5])}
+        exec(compile(ast.Module(body=[wrapper], type_ignores=[]), "__init__.py", "exec"), env)
+        executor = types.SimpleNamespace(class_obj=object())
+        for trailing in ((None, {}), (None, ["native reference"], {})):
+            opts = trailing[-1]
+            payload = {"count": 3, "biases": ((1, 2),)}
+            env["wrapper"](executor, None, None, None, *trailing,
+                           krea2edit_phrase_weights=payload)
+            self.assertEqual(captured[-1][p.OPTION_KEY], payload)
+            self.assertNotIn(p.OPTION_KEY, opts)
+            env["wrapper"](executor, None, None, None, *trailing)
+            self.assertNotIn(p.OPTION_KEY, captured[-1])
 
 if __name__ == "__main__":
     unittest.main()

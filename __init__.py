@@ -397,6 +397,13 @@ class Krea2EditModelPatch:
                         transformer_options = a
                         break
             dm = executor.class_obj  # the SingleStreamDiT instance
+            # Native model_conds preserve branch identity without conditioning hooks.
+            # Any conditioning hook makes ComfyUI switch away from dynamic VRAM,
+            # which can expose dtype mismatches in dynamically staged model weights.
+            phrase_payload = kwargs.pop("krea2edit_phrase_weights", None)
+            if phrase_payload is not None:
+                transformer_options = transformer_options.copy()
+                transformer_options["krea2edit_phrase_weights"] = phrase_payload
             src = src_samples
             if vae is not None and source_image is not None:
                 xx = _to_4d(x)

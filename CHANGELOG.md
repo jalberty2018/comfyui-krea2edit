@@ -1,5 +1,13 @@
 # Changelog — Krea 2 Identity Edit
 
+## Fork fix — Dynamic VRAM phrase transport
+
+- Replace phrase conditioning hooks with native CONDConstant model conditioning.
+- Avoid the hook-triggered switch to non-dynamic loading observed before a
+  BF16/FP32 mismatch at the first projection in ComfyUI 0.42.1.
+- Preserve per-branch phrase data and existing model conditioning.
+- Fully restart ComfyUI after updating to discard old cached hooks/load state.
+
 ## Fork update — Grounded Phrase Weights
 
 - Added Krea2 Edit (grounded encode — Phrase Weights), preserving existing nodes.
