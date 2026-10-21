@@ -279,6 +279,12 @@ def krea2_edit_forward(m, x, timesteps, context, src_latent, transformer_options
                                    [si.shape[1] for si in src_imgs], tgtlen,
                                    src_grids, combined.device, combined.dtype)
 
+    phrase_payload = transformer_options.get("krea2edit_phrase_weights")
+    if phrase_payload is not None:
+        from .phrase_weights import apply_phrase_bias
+        attn_bias = apply_phrase_bias(
+            attn_bias, phrase_payload, txtlen, srclen, tgtlen, combined)
+
     for block in m.blocks:
         combined = block(combined, tvec, freqs, attn_bias, transformer_options=transformer_options)
 
@@ -513,13 +519,63 @@ class Krea2EditGroundedEncode:
         return (clip.encode_from_tokens_scheduled(tokens),)
 
 
+class Krea2EditGroundedPhraseEncode(Krea2EditGroundedEncode):
+    """Grounded encoding with conditioning-scoped phrase weights for the source patch."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        schema = super().INPUT_TYPES()
+        schema["required"]["prompt"][1]["dynamicPrompts"] = False
+        schema["required"]["prompt"][1]["tooltip"] = (
+            "Use (phrase:weight). Requires Krea2 Edit (source patch) from this version.")
+        return schema
+
+    RETURN_TYPES = ("CONDITIONING", "STRING")
+    RETURN_NAMES = ("conditioning", "phrase_report")
+    DESCRIPTION = "Grounded phrase weights; use with this package's Krea2 Edit source patch."
+
+    def encode(self, clip, prompt, image=None, image_b=None, grounding_px=768, system_prompt="", **kwargs):
+        import json
+        import re
+        from .phrase_parser import parse_phrases
+        from .phrase_weights import encode_phrases
+        clean, spans = parse_phrases(prompt)
+        if "<|" in clean or re.search(r"\([^()]*\(", prompt):
+            raise ValueError("Use non-nested phrase annotations and no raw chat markers.")
+        if not spans:
+            result = super().encode(clip, clean, image, image_b, grounding_px, system_prompt, **kwargs)
+            return result[0], json.dumps({"active": False, "clean_text": clean, "entries": []})
+        if image is None and image_b is not None:
+            raise ValueError("Connect the first reference to image before using image_b.")
+        imgs = [self._prep(im, grounding_px) for im in (image, image_b) if im is not None]
+        if any(im.shape[0] != 1 for im in imgs):
+            raise ValueError("Phrase mapping supports one image per reference socket.")
+        if imgs:
+            if "<|" in system_prompt:
+                raise ValueError("Use plain text in system_prompt.")
+            template = self._template(len(imgs), system_prompt)
+            tokens = clip.tokenize(clean, images=imgs, llama_template=template)
+        else:
+            from comfy.text_encoders.krea2 import KREA2_TEMPLATE
+            template = KREA2_TEMPLATE
+            tokens = clip.tokenize(clean)
+        conditioning, reports = encode_phrases(clip, clean, spans, tokens, template)
+        return conditioning, json.dumps({
+            "active": any(r["active"] for r in reports), "clean_text": clean,
+            "requires": "Krea2 Edit (source patch) from this package",
+            "scope": "target image queries to phrase text keys",
+            "entries": reports}, ensure_ascii=False, indent=2)
+
+
 NODE_CLASS_MAPPINGS = {
     "Krea2EditModelPatch": Krea2EditModelPatch,
     "Krea2EditGroundedEncode": Krea2EditGroundedEncode,
+    "Krea2EditGroundedPhraseEncode": Krea2EditGroundedPhraseEncode,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Krea2EditModelPatch": "Krea2 Edit (source patch)",
     "Krea2EditGroundedEncode": "Krea2 Edit (grounded encode)",
+    "Krea2EditGroundedPhraseEncode": "Krea2 Edit (grounded encode — Phrase Weights)",
 }
 
 

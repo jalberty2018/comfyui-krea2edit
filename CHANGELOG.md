@@ -1,5 +1,12 @@
 # Changelog — Krea 2 Identity Edit
 
+## Fork update — Grounded Phrase Weights
+
+- Added Krea2 Edit (grounded encode — Phrase Weights), preserving existing nodes.
+- Added conditioning-scoped target-to-text bias to the source patch, alongside reference boosts.
+- Exact token validation and suffix mapping support zero, one or two grounding images.
+- Added model-free mapping and additive-mask tests. GPU validation remains pending.
+
 Weights: https://huggingface.co/conradlocke/krea2-identity-edit
 v1.2 updates the **nodes** (see below); they stay backward-compatible with v1/v1.1
 weights via `fit_mode: crop`.

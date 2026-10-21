@@ -21,7 +21,7 @@ keep working with these nodes. See [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/lbouaraba/comfyui-krea2edit
+git clone https://github.com/jalberty2018/comfyui-krea2edit
 # restart ComfyUI
 ```
 
@@ -31,6 +31,56 @@ LoRAs (`krea2_identity_edit_v2.safetensors` and/or `krea2_general_edit_v2.safete
 No extra Python dependencies.
 
 ## Nodes
+
+### Krea2 Edit (grounded encode — Phrase Weights)
+
+This fork adds an experimental phrase-weighted variant of the grounded encoder.
+Replace **Krea2 Edit (grounded encode)** with **Krea2 Edit (grounded encode — Phrase Weights)**.
+Keep the same CLIP, image, optional image_b, grounding_px and system_prompt inputs.
+Connect its first output to the sampler's conditioning input.
+
+Use **Krea2 Edit (source patch)** from this updated package in the MODEL path.
+The weighted encoder's hooks are consumed by that source patch; a native Krea2
+MODEL without this patch will not apply the phrase weights. No Enhancer install
+is required. Existing source-patch and grounded-encoder node IDs remain unchanged.
+
+Example instruction:
+
+```text
+Change the jacket to (dark red:2) and keep the (face unchanged:1.3).
+```
+
+Only the marked occurrence receives a weight. 1 is neutral, above 1 increases
+relative attention odds, between 0 and 1 reduces them, and 0 applies a -80 score
+bias. A weight is not a guarantee of proportional visual change or preservation.
+Use separate, non-nested whole words/phrases in the instruction. System-prompt
+weighting, raw chat markers and batched reference images are unsupported.
+
+Phrase parsing follows the approach in
+[ComfyUI-Krea2T-Enhancer](https://github.com/jalberty2018/ComfyUI-Krea2T-Enhancer).
+The edit integration validates the exact token sequence and maps phrase rows
+after visual-token expansion and native prefix removal. It supports zero, one
+or two grounding images. The bias affects target-image queries to text keys;
+source-image queries and the existing ref_boost/ref_boost_a biases are preserved.
+Positive and negative conditioning can carry separate weights.
+
+The optional phrase_report output lists the clean prompt, final token rows and
+whether a hook was attached. It does not confirm sampler execution.
+Weights of 1 do not attach a hook. Unannotated prompts use the original encoder path.
+
+**Experimental:** model-free mapping and mask tests pass; GPU image editing,
+CFG batching, control/attention patches and quantized setups need validation.
+The additive mask uses square sequence memory, which can increase VRAM usage
+with large references. Start without other attention patches.
+
+For a fixed-seed test, compare the original encoder with plain text against the
+new node with all weights 1. Then try one phrase at 2 and 5, keeping reference
+strength and all other settings fixed. Repeat with two images if your workflow
+uses image_b. CPU checks: `python tests/test_phrase_weights.py` (requires NumPy).
+
+Parser attribution: copyright (c) 2026 capitan01R, MIT; see
+[LICENSE-phrase-weights-MIT](LICENSE-phrase-weights-MIT). The original project
+remains Apache-2.0.
 
 ### `Krea2EditModelPatch`
 Wraps the diffusion model so the VAE-encoded source image is prepended as clean
